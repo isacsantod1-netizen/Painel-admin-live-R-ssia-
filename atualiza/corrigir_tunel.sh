@@ -8,7 +8,7 @@ pkill -9 -f cloudflared
 sleep 2
 rm -f ~/sombra_server/tunel.log ~/sombra_server/SERVIDOR_URL.txt
 echo "[2/6] Garantindo proot (serve pro DNS)..."
-pkg install -y proot >/dev/null 2>&1
+pkg install -y proot ca-certificates >/dev/null 2>&1
 echo "[3/6] Baixando cloudflared (37 MB)..."
 rm -f cloudflared.bin
 curl -sL --retry 3 --retry-delay 2 -o cloudflared.bin https://raw.githubusercontent.com/isacsantod1-netizen/Painel-admin-live-R-ssia-/main/atualiza/cloudflared
@@ -24,7 +24,7 @@ echo "nameserver 8.8.8.8" > /data/data/com.termux/files/usr/etc/resolv.conf
 echo "nameserver 1.1.1.1" >> /data/data/com.termux/files/usr/etc/resolv.conf
 cat > cloudflared <<'WRAP'
 #!/data/data/com.termux/files/usr/bin/sh
-exec proot -b /data/data/com.termux/files/usr/etc/resolv.conf:/etc/resolv.conf /data/data/com.termux/files/home/sombra_server/termux/cloudflared.bin "$@"
+exec proot -b /data/data/com.termux/files/usr/etc/resolv.conf:/etc/resolv.conf -b /data/data/com.termux/files/usr/etc/tls:/etc/ssl /data/data/com.termux/files/home/sombra_server/termux/cloudflared.bin "$@"
 WRAP
 chmod +x cloudflared
 sed -i 's/cloudflared tunnel/termux\/cloudflared/g' ~/sombra_server/termux/boot.sh
