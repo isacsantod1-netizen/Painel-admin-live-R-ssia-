@@ -236,6 +236,7 @@ function montarTabela() {
           ? '<button class="btn mini verde" onclick="fazer(' + c.id + ',\'liberar\')">▶</button>'
           : '<button class="btn mini" style="background:#5c1b22" onclick="fazer(' + c.id + ',\'ban\')">🚫</button>') +
         '<button class="btn mini cinza" onclick="fazer(' + c.id + ',\'reset\')">♻ reset</button>' +
+        '<button class="btn mini" style="background:#4a3a12" onclick="fazer(' + c.id + ',\'revogar\')">🔌 sessões</button>' +
         '<button class="btn mini" style="background:#3a1218" onclick="fazer(' + c.id + ',\'deletar\')">🗑</button>' +
       '</div></td></tr>';
   }).join("");
@@ -276,6 +277,7 @@ async function fazer(cid, acao) {
   if (acao === "deletar" && !confirm("Apagar a key DEFINITIVAMENTE?")) return;
   if (acao === "ban" && !confirm("Banir esta key?")) return;
   if (acao === "reset" && !confirm("Apagar TODOS os aparelhos desta key?")) return;
+  if (acao === "revogar" && !confirm("Revogar as SESSÕES ativas desta key? Ela vai precisar digitar a key de novo.")) return;
   var r = await api("/api/chaves/" + cid + "/" + acao, "POST");
   if (r.ok) { toast("Feito ✓", true); recarregar(); } else toast("Erro: " + (r.erro || "?"));
 }
