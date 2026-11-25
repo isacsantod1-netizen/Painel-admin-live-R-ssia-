@@ -94,8 +94,21 @@ def db_init():
             codigo TEXT DEFAULT '',
             origem TEXT DEFAULT ''
         );
+        CREATE TABLE IF NOT EXISTS tokens(
+            chave_id INTEGER NOT NULL,
+            codigo TEXT NOT NULL,
+            jti TEXT DEFAULT '',
+            nonce TEXT DEFAULT '',
+            atualizado_em TEXT DEFAULT '',
+            PRIMARY KEY(chave_id, codigo)
+        );
         """
     )
+    try:
+        con.execute("ALTER TABLE chaves ADD COLUMN permissoes TEXT DEFAULT '*'")
+        con.commit()
+    except sqlite3.OperationalError:
+        pass
     con.commit()
     con.close()
 
@@ -111,6 +124,31 @@ def log_evento(evento, detalhe="", con=None):
     if fechar:
         con.commit()
         con.close()
+
+
+_FALHAS = {}  # chave -> [qtd, inicio_janela]
+
+
+def _falhas_bloqueada(chave):
+    reg = _FALHAS.get(chave)
+    if not reg:
+        return False
+    if time.time() - reg[1] > 600:
+        _FALHAS.pop(chave, None)
+        return False
+    return reg[0] >= 8
+
+
+def _falhas_soma(chave):
+    reg = _FALHAS.get(chave)
+    if not reg or time.time() - reg[1] > 600:
+        _FALHAS[chave] = [1, time.time()]
+    else:
+        reg[0] += 1
+
+
+def _falhas_limpa(chave):
+    _FALHAS.pop(chave, None)
 
 
 def agora():
@@ -233,8 +271,8 @@ def criar_chave(chave, cliente, nota, dias, max_aparelhos):
     return chave, expira
 
 
-def validar_chave(chave, codigo, origem="api"):
-    """Valida chave+aparelho e monta o passe assinado."""
+def validar_chave(chave, codigo, origem="api", jti_req=None, revalida=False):
+    """Valida chave+aparelho e monta o passe assinado (anti-replay com jti)."""
     chave = (chave or "").strip().upper()
     codigo = (codigo or "").strip().upper()
     if not chave or not codigo:
@@ -248,6 +286,16 @@ def validar_chave(chave, codigo, origem="api"):
         con.close()
         log_evento("validar_falhou", f"{chave} inexistente ({origem}/{codigo})")
         return {"ok": False, "erro": "Key invalida! Crie no painel."}
+
+    # ---- ANTI-REPLAY: revalidacao precisa apresentar o jti do passe atual ----
+    if revalida and jti_req:
+        tok = con.execute(
+            "SELECT jti FROM tokens WHERE chave_id=? AND codigo=?", (row["id"], codigo)
+        ).fetchone()
+        if tok is not None and tok["jti"] and tok["jti"] != jti_req:
+            con.close()
+            log_evento("replay_suspeito", f"{chave} {codigo} jti={jti_req[:16]}")
+            return {"ok": False, "erro": "Sessao invalida! Entre novamente."}
 
     st = status_real(row)
     if st == "banida":
@@ -316,7 +364,23 @@ def validar_chave(chave, codigo, origem="api"):
         grant_expira = expira_chave
     expira_str = grant_expira.strftime(FMT_DATA)
     nonce = secrets.token_hex(8)
-    payload = f"SOMBRAMODZ-V1|{chave}|{codigo}|{expira_str}|{nonce}"
+    jti = secrets.token_hex(8)
+    try:
+        perm = row["permissoes"] or "*"
+    except (KeyError, IndexError):
+        perm = "*"
+    payload = f"SOMBRAMODZ-V2|{chave}|{codigo}|{expira_str}|{nonce}|{jti}|{perm}"
+    # guarda o jti atual (roda a cada emissao = anti-replay)
+    con2 = db()
+    try:
+        con2.execute(
+            "INSERT OR REPLACE INTO tokens(chave_id,codigo,jti,nonce,atualizado_em) VALUES (?,?,?,?,?)",
+            (row["id"], codigo, jti, nonce, agora()),
+        )
+        con2.commit()
+    except sqlite3.OperationalError:
+        pass
+    con2.close()
     return {
         "ok": True,
         "chave": chave,
@@ -834,12 +898,24 @@ def api_validar():
         return jsonify({"ok": False, "erro": "Atualize o APK para continuar!"}), 403
     if j.get("integrity"):
         log_evento("integrity", str(j.get("integrity"))[:120])
+    chave_bruta = str(j.get("chave", ""))[:24]
+    # ---- LIMITE DE TENTATIVAS por key (anti-forca-bruta) ----
+    if _falhas_bloqueada(chave_bruta):
+        log_evento("tentativas_excedidas", chave_bruta)
+        return jsonify({"ok": False, "erro": "Muitas tentativas! Aguarde alguns minutos."}), 429
     try:
-        res = validar_chave(j.get("chave", ""), j.get("codigo", ""), origem="api")
+        res = validar_chave(
+            j.get("chave", ""), j.get("codigo", ""), origem="api",
+            jti_req=(str(j.get("jti", "")).strip() or None),
+            revalida=bool(j.get("revalida")),
+        )
     except sqlite3.OperationalError:
         res = {"ok": False, "erro": "Servidor ocupado! Tente de novo."}
-    if not res.get("ok"):
-        log_evento("validar_negado", (str(j.get("chave", ""))[:24] + " " + str(j.get("codigo", ""))[:12] + " " + str(res.get("erro", ""))[:40]))
+    if res.get("ok"):
+        _falhas_limpa(chave_bruta)
+    else:
+        _falhas_soma(chave_bruta)
+        log_evento("validar_negado", (chave_bruta + " " + str(j.get("codigo", ""))[:12] + " " + str(res.get("erro", ""))[:40]))
     return jsonify(res), (200 if res["ok"] else 403)
 
 
