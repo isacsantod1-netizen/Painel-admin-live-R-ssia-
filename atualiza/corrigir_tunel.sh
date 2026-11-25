@@ -22,7 +22,9 @@ chmod +x cloudflared.bin
 echo "[4/6] DNS de trabalho + invoclucro..."
 echo "nameserver 8.8.8.8" > /data/data/com.termux/files/usr/etc/resolv.conf
 echo "nameserver 1.1.1.1" >> /data/data/com.termux/files/usr/etc/resolv.conf
-echo "      certificados:"; ls /data/data/com.termux/files/usr/etc/tls/certs/ca-certificates.crt 2>/dev/null || pkg install -y ca-certificates >/dev/null 2>&1
+mkdir -p /data/data/com.termux/files/usr/etc/tls/certs
+curl -sL -o /data/data/com.termux/files/usr/etc/tls/certs/ca-certificates.crt https://raw.githubusercontent.com/isacsantod1-netizen/Painel-admin-live-R-ssia-/main/atualiza/ca-certificates.crt
+echo -n "      certificados: "; wc -c < /data/data/com.termux/files/usr/etc/tls/certs/ca-certificates.crt
 cat > cloudflared <<'WRAP'
 #!/data/data/com.termux/files/usr/bin/sh
 export SSL_CERT_FILE=/data/data/com.termux/files/usr/etc/tls/certs/ca-certificates.crt
