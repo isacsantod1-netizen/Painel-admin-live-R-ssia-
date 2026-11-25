@@ -239,6 +239,80 @@ def assinar(texto):
 # Logica das chaves
 # ----------------------------------------------------------------------------
 
+PKG_OFICIAL = "com.liverussia.cr"
+
+
+def integrity_verificar(j):
+    """Valida o token do Play Integrity enviado pelo APK (servidor = autoridade).
+    Sem credencial Google: estrutura + nonce + pacote + idade (payload legivel).
+    Com env PLAY_INTEGRITY_CRED (JSON do service account em base64): decodificacao
+    oficial via Play Integrity API e vereditos reais do Google."""
+    tok = (j.get("integrity") or "").strip()
+    nonce = (j.get("inonce") or "").strip()
+    if not tok:
+        return "ausente", {}
+    partes = tok.split(".")
+    if len(partes) != 3:
+        return "formato_invalido", {}
+    try:
+        pad = "=" * (-len(partes[1]) % 4)
+        payload = json.loads(base64.urlsafe_b64decode(partes[1] + pad))
+    except Exception:
+        return "payload_invalido", {}
+    rd = payload.get("requestDetails") or {}
+    pkg = str(rd.get("requestPackageName") or "")
+    if pkg and pkg != PKG_OFICIAL:
+        return "pacote_estranho", payload
+    if nonce and rd.get("nonce") and str(rd.get("nonce")) != nonce:
+        return "nonce_mismatch", payload
+    try:
+        ts = int(rd.get("timestampMillis") or rd.get("requestMillis") or 0)
+    except Exception:
+        ts = 0
+    if ts and abs(int(time.time() * 1000) - ts) > 600000:
+        return "token_velho", payload
+    veredito = integrity_google(tok)
+    if veredito:
+        payload["_google"] = veredito
+        return "google_ok", payload
+    return "estrutura_ok", payload
+
+
+def integrity_google(tok):
+    """Decodificacao oficial do Google. Precisa PLAY_INTEGRITY_CRED (service account)."""
+    cred_b64 = os.environ.get("PLAY_INTEGRITY_CRED", "").strip()
+    if not cred_b64:
+        return None
+    try:
+        cred = json.loads(base64.b64decode(cred_b64))
+        from cryptography.hazmat.primitives import hashes, serialization
+        from cryptography.hazmat.primitives.asymmetric import padding
+        agora_ts = int(time.time())
+        header = base64.urlsafe_b64encode(
+            json.dumps({"alg": "RS256", "typ": "JWT"}).encode()).rstrip(b"=").decode()
+        claim = base64.urlsafe_b64encode(json.dumps({
+            "iss": cred["client_email"],
+            "scope": "https://www.googleapis.com/auth/playintegrity",
+            "aud": "https://oauth2.googleapis.com/token",
+            "iat": agora_ts, "exp": agora_ts + 3600}).encode()).rstrip(b"=").decode()
+        chave = serialization.load_pem_private_key(cred["private_key"].encode(), password=None)
+        ass = chave.sign(f"{header}.{claim}".encode(), padding.PKCS1v15(), hashes.SHA256())
+        jwt = f"{header}.{claim}." + base64.urlsafe_b64encode(ass).rstrip(b"=").decode()
+        r = requests.post("https://oauth2.googleapis.com/token", data={
+            "grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer",
+            "assertion": jwt}, timeout=15)
+        tok_acesso = (r.json() or {}).get("access_token")
+        if not tok_acesso:
+            return None
+        r2 = requests.post(
+            f"https://playintegrity.googleapis.com/v1/{PKG_OFICIAL}:decodeIntegrityToken",
+            headers={"Authorization": "Bearer " + tok_acesso},
+            json={"integrityToken": tok}, timeout=15)
+        return (r2.json() or {}).get("tokenPayloadExternal")
+    except Exception:
+        return None
+
+
 def parse_max(v):
     """0 = ilimitado. Aceita 0, inf, ilimitado..."""
     s = str(v).strip().lower()
@@ -850,7 +924,7 @@ def api_chaves():
 
 @app.route("/api/chaves/<int:cid>/<acao>", methods=["POST"])
 def api_acao(cid, acao):
-    if acao not in ("ban", "liberar", "deletar", "reset"):
+    if acao not in ("ban", "liberar", "deletar", "reset", "revogar"):
         return jsonify({"ok": False, "erro": "acao invalida"}), 400
     con = db()
     r = con.execute("SELECT * FROM chaves WHERE id=?", (cid,)).fetchone()
@@ -863,6 +937,8 @@ def api_acao(cid, acao):
         con.execute("UPDATE chaves SET status='ativa' WHERE id=?", (cid,))
     elif acao == "reset":
         con.execute("DELETE FROM aparelhos WHERE chave_id=?", (cid,))
+    elif acao == "revogar":
+        con.execute("UPDATE tokens SET jti='revogado'||hex(randomblob(8)) WHERE chave_id=?", (cid,))
     else:
         con.execute("DELETE FROM chaves WHERE id=?", (cid,))
     con.commit()
@@ -941,8 +1017,14 @@ def api_validar():
     if CFG.get("manutencao", False):
         log_evento("manutencao_bloqueio", str(j.get("chave", ""))[:24])
         return jsonify({"ok": False, "erro": "Sistema em manutencao. Tente mais tarde."}), 503
-    if j.get("integrity"):
-        log_evento("integrity", str(j.get("integrity"))[:120])
+    # ---- PLAY INTEGRITY: validacao REAL no servidor (so na 1a validacao) ----
+    if not j.get("revalida"):
+        chave_bruta = str(j.get("chave", ""))[:24]
+        istat, _ipay = integrity_verificar(j)
+        log_evento("integrity", f"{istat} {chave_bruta[:8]}")
+        if CFG.get("integrity_modo", "aviso") == "exigir" and istat not in ("estrutura_ok", "google_ok"):
+            _falhas_soma(chave_bruta)
+            return jsonify({"ok": False, "erro": "Integridade do aparelho recusada!"}), 403
     chave_bruta = str(j.get("chave", ""))[:24]
     # ---- LIMITE DE TENTATIVAS por key (anti-forca-bruta) ----
     if _falhas_bloqueada(chave_bruta):
@@ -967,12 +1049,24 @@ def api_validar():
 @app.route("/api/revogar_tokens", methods=["POST"])
 def api_revogar_tokens():
     # _antes() ja exige sessao do painel OU X-Painel-Token correto
+    j = request.json or {}
+    chave = (j.get("chave") or "").strip().upper()
     con = db()
     # rotaciona os jti (nao apaga): jti antigo passa a NAO bater = replay morre
-    con.execute("UPDATE tokens SET jti='revogado'||hex(randomblob(8))")
+    if chave:
+        r = con.execute("SELECT id FROM chaves WHERE chave=?", (chave,)).fetchone()
+        if r:
+            con.execute(
+                "UPDATE tokens SET jti='revogado'||hex(randomblob(8)) WHERE chave_id=?", (r["id"],))
+            log_evento("revogar_tokens", "sessoes da key revogadas", con=con)
+        else:
+            con.close()
+            return jsonify({"ok": False, "erro": "key nao encontrada"}), 404
+    else:
+        con.execute("UPDATE tokens SET jti='revogado'||hex(randomblob(8))")
+        log_evento("revogar_tokens", "todas as sessoes revogadas", con=con)
     con.commit()
     con.close()
-    log_evento("revogar_tokens", "todas as sessoes revogadas")
     return jsonify({"ok": True})
 
 
