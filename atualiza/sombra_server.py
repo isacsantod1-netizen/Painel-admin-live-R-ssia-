@@ -827,10 +827,35 @@ def api_validar():
         return bloqueio
     j = request.json or {}
     try:
+        vv = int(j.get("v", 0))
+    except Exception:
+        vv = 0
+    if vv < int(CFG.get("versao_min", 0)):
+        return jsonify({"ok": False, "erro": "Atualize o APK para continuar!"}), 403
+    if j.get("integrity"):
+        log_evento("integrity", str(j.get("integrity"))[:120])
+    try:
         res = validar_chave(j.get("chave", ""), j.get("codigo", ""), origem="api")
     except sqlite3.OperationalError:
         res = {"ok": False, "erro": "Servidor ocupado! Tente de novo."}
     return jsonify(res), (200 if res["ok"] else 403)
+
+
+@app.route("/api/relato", methods=["POST"])
+def api_relato():
+    j = request.json or {}
+    chave = (j.get("chave") or "").strip().upper()
+    codigo = (j.get("codigo") or "").strip()
+    tipo = (j.get("tipo") or "?").strip()
+    detalhe = (j.get("detalhe") or "").strip()
+    log_evento("relato_" + tipo, (chave + " " + codigo + " " + detalhe)[:120])
+    if tipo.startswith("tamper") and CFG.get("banir_auto", False) and chave:
+        con = db()
+        con.execute("UPDATE chaves SET status='banida' WHERE chave=?", (chave,))
+        con.commit()
+        con.close()
+        log_evento("auto_ban", chave)
+    return jsonify({"ok": True})
 
 
 def limite(ip, maximo=12, chave=""):
