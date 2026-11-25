@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SOMBRAMODZ • Painel</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  body { font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif; background:#0b0b0e; color:#eee; min-height:100vh; }
+  .topo { background:#101014; border-bottom:2px solid #e63946; padding:14px 16px; display:flex; align-items:center; justify-content:space-between; position:sticky; top:0; z-index:50; }
+  .logo { font-size:20px; font-weight:900; letter-spacing:1px; color:#e63946; }
+  .logo small { color:#8a8a95; font-size:11px; font-weight:400; letter-spacing:2px; display:block; }
+  .btn { background:#e63946; color:#fff; border:0; border-radius:10px; padding:11px 16px; font-size:14px; font-weight:700; cursor:pointer; }
+  .btn:active { transform:scale(.97); }
+  .btn.cinza { background:#26262e; color:#ddd; }
+  .btn.verde { background:#1f9d55; }
+  .btn.ambar { background:#c98a12; }
+  .btn.mini { padding:7px 10px; font-size:12px; border-radius:8px; }
+  .wrap { max-width:980px; margin:0 auto; padding:16px; }
+  .cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:10px; margin:16px 0; }
+  .card { background:#16161b; border:1px solid #23232b; border-radius:14px; padding:14px; }
+  .card .num { font-size:26px; font-weight:900; }
+  .card .lbl { color:#8a8a95; font-size:11px; text-transform:uppercase; letter-spacing:1px; margin-top:2px; }
+  .verde-t { color:#3ddc84; } .ambar-t { color:#ffc043; } .verm-t { color:#ff5b6a; } .azul-t { color:#5ab0ff; }
+  .painel { background:#16161b; border:1px solid #23232b; border-radius:16px; padding:16px; margin-bottom:16px; }
+  .painel h2 { font-size:15px; letter-spacing:.5px; margin-bottom:12px; color:#fff; display:flex; align-items:center; gap:8px; }
+  input, select { background:#0e0e12; border:1px solid #2a2a33; color:#eee; border-radius:10px; padding:11px 12px; font-size:15px; width:100%; outline:none; }
+  input:focus { border-color:#e63946; }
+  label { display:block; font-size:11px; color:#8a8a95; text-transform:uppercase; letter-spacing:1px; margin:10px 0 5px; }
+  .linha { display:flex; gap:10px; flex-wrap:wrap; }
+  .linha > * { flex:1; min-width:130px; }
+  .tabela { width:100%; border-collapse:collapse; font-size:13px; }
+  .tabela th { text-align:left; color:#8a8a95; font-size:10px; text-transform:uppercase; letter-spacing:1px; padding:8px 6px; border-bottom:1px solid #26262e; }
+  .tabela td { padding:10px 6px; border-bottom:1px solid #1e1e25; vertical-align:middle; }
+  .scroll { overflow-x:auto; }
+  .key { font-family:monospace; font-size:12px; color:#fff; background:#0e0e12; padding:4px 8px; border-radius:7px; display:inline-block; cursor:pointer; }
+  .badge { font-size:10px; font-weight:800; padding:3px 9px; border-radius:20px; letter-spacing:.5px; }
+  .b-at { background:#12351f; color:#3ddc84; } .b-ex { background:#3a2c0c; color:#ffc043; } .b-ba { background:#3a1218; color:#ff5b6a; }
+  .acoes { display:flex; gap:5px; flex-wrap:wrap; }
+  .toast { position:fixed; left:50%; top:70px; transform:translateX(-50%); background:#16161b; border:1px solid #2a2a33; border-left:4px solid #e63946; padding:12px 18px; border-radius:12px; font-size:14px; font-weight:700; z-index:200; display:none; max-width:92vw; box-shadow:0 10px 30px rgba(0,0,0,.5); }
+  .fixo { position:fixed; inset:0; background:rgba(5,5,8,.85); display:none; align-items:center; justify-content:center; z-index:100; padding:16px; }
+  .fixo .caixa { background:#16161b; border:1px solid #2a2a33; border-radius:18px; padding:20px; width:100%; max-width:460px; max-height:86vh; overflow:auto; }
+  .fixo h3 { margin-bottom:12px; font-size:17px; }
+  .login-caixa { max-width:420px; margin:9vh auto; background:#16161b; border:1px solid #23232b; border-radius:20px; padding:26px; }
+  .logo-c { text-align:center; margin-bottom:22px; }
+  .logo-c .logo { font-size:30px; }
+  .pequeno { font-size:11px; color:#6d6d78; margin-top:10px; line-height:1.5; }
+  .ok-linha { display:flex; justify-content:space-between; gap:8px; padding:9px 0; border-bottom:1px solid #1e1e25; font-size:13px; flex-wrap:wrap; }
+  .status-bola { display:inline-block; width:9px; height:9px; border-radius:50%; background:#3ddc84; margin-right:6px; }
+  .status-bola.off { background:#ff5b6a; }
+  .validar-caixa { display:flex; gap:8px; }
+  .validar-caixa input { flex:1; }
+</style>
+</head>
+<body>
+
+<div class="topo">
+  <div class="logo">SOMBRAMODZ<small>LIVE RÚSSIA • PAINEL</small></div>
+  <button class="btn cinza mini" onclick="sair()" id="btnSair" style="display:none">Sair</button>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<!-- LOGIN -->
+<div class="wrap" id="telaLogin">
+  <div class="login-caixa">
+    <div class="logo-c"><div class="logo">SOMBRAMODZ</div><small style="color:#8a8a95;letter-spacing:3px">PAINEL DE CHAVES</small></div>
+    <label>Senha do painel</label>
+    <input type="password" id="inpSenha" placeholder="••••••••" autocomplete="off">
+    <label>Endereço do servidor (auto)</label>
+    <input type="text" id="inpUrl" placeholder="https://....trycloudflare.com">
+    <div style="height:14px"></div>
+    <button class="btn" style="width:100%" onclick="entrar()">ENTRAR</button>
+    <div class="pequeno">A senha é a mesma do servidor (config.json → senha_painel).<br>Ficou salva só neste aparelho.</div>
+  </div>
+</div>
+
+<!-- PAINEL -->
+<div class="wrap" id="telaPainel" style="display:none">
+
+  <div class="cards">
+    <div class="card"><div class="num verde-t" id="cAtivas">0</div><div class="lbl">Ativas</div></div>
+    <div class="card"><div class="num ambar-t" id="cExpiradas">0</div><div class="lbl">Expiradas</div></div>
+    <div class="card"><div class="num verm-t" id="cBanidas">0</div><div class="lbl">Banidas</div></div>
+    <div class="card"><div class="num azul-t" id="cAparelhos">0</div><div class="lbl">Aparelhos</div></div>
+    <div class="card"><div class="num" id="cUptime" style="font-size:16px">—</div><div class="lbl"><span class="status-bola" id="bola"></span>Servidor</div></div>
+  </div>
+
+  <div class="painel">
+    <h2>🔎 Validar key</h2>
+    <div class="validar-caixa">
+      <input type="text" id="inpValidar" placeholder="Cole a key aqui... SOMBRA-XXXX-XXXX-XXXX">
+      <button class="btn" onclick="validarBusca()">VALIDAR</button>
+    </div>
+    <div class="pequeno">Mostra se a key existe, está ativa, expirada ou banida. Não registra aparelho.</div>
+  </div>
+
+  <div class="painel">
+    <h2>➕ Criar key
+      <button class="btn mini" style="margin-left:auto" onclick="abrirCriar()">NOVA KEY</button>
+    </h2>
+    <div class="scroll">
+      <table class="tabela">
+        <thead><tr><th>Key</th><th>Cliente</th><th>Expira</th><th>Aparelhos</th><th>Status</th><th>Ações</th></tr></thead>
+        <tbody id="tbChaves"><tr><td colspan="6" style="color:#6d6d78">Carregando...</td></tr></tbody>
+      </table>
+    </div>
+    <div class="pequeno">Toque na key pra copiar.</div>
+  </div>
+
+  <div class="painel">
+    <h2>📋 Log recente</h2>
+    <div id="logBox" style="font-size:12px;color:#9a9aa5"></div>
+  </div>
+</div>
+
+<!-- MODAL CRIAR -->
+<div class="fixo" id="modCriar">
+  <div class="caixa">
+    <h3>➕ Nova key</h3>
+    <label>Cliente (opcional)</label><input type="text" id="nCliente" placeholder="nome do cliente">
+    <label>Nota (opcional)</label><input type="text" id="nNota" placeholder="ex: pago 30d">
+    <div class="linha">
+      <div><label>Dias</label><input type="number" id="nDias" value="30" min="1"></div>
+      <div><label>Máx. aparelhos (0=∞)</label><input type="number" id="nMax" value="1" min="0"></div>
+    </div>
+    <div style="height:14px"></div>
+    <div class="linha">
+      <button class="btn cinza" onclick="fechar('modCriar')">Cancelar</button>
+      <button class="btn verde" onclick="criarKey()">CRIAR</button>
+    </div>
+    <div class="pequeno">Deixe a key em branco que o sistema gera uma SOMBRA-XXXX-XXXX-XXXX.</div>
+  </div>
+</div>
+
+<!-- MODAL APARELHOS -->
+<div class="fixo" id="modApr">
+  <div class="caixa">
+    <h3>📱 Aparelhos <span id="aprKey" style="font-family:monospace;font-size:12px;color:#8a8a95"></span></h3>
+    <div id="listaApr">Carregando...</div>
+    <div style="height:14px"></div>
+    <button class="btn cinza" style="width:100%" onclick="fechar('modApr')">Fechar</button>
+  </div>
+</div>
+
+<script>
+var BASE = "", SENHA = "", DADOS = [];
+
+function toast(msg, bom) {
+  var t = document.getElementById("toast");
+  t.innerHTML = msg;
+  t.style.borderLeftColor = bom ? "#3ddc84" : "#e63946";
+  t.style.display = "block";
+  clearTimeout(t._t);
+  t._t = setTimeout(function(){ t.style.display = "none"; }, 3500);
+}
+function sair() { localStorage.removeItem("sombra_senha"); location.reload(); }
+function fechar(id) { document.getElementById(id).style.display = "none"; }
+
+async function descobrirUrl() {
+  try {
+    var r = await fetch("https://raw.githubusercontent.com/isacsantod1-netizen/Painel-admin-live-R-ssia-/main/servidor.txt", {cache:"no-store"});
+    var t = (await r.text()).trim();
+    if (t.indexOf("http") === 0) return t.replace(/\/+$/,"");
+  } catch(e) {}
+  return localStorage.getItem("sombra_url") || "";
+}
+
+async function api(caminho, metodo, corpo) {
+  var opt = { method: metodo || "GET", headers: { "X-Painel-Token": SENHA } };
+  if (corpo) { opt.headers["Content-Type"] = "application/json"; opt.body = JSON.stringify(corpo); }
+  var r = await fetch(BASE + caminho, opt);
+  if (r.status === 401) { toast("Senha errada ou servidor atualizado!"); throw new Error("401"); }
+  return r.json();
+}
+
+async function entrar() {
+  SENHA = document.getElementById("inpSenha").value.trim();
+  var url = document.getElementById("inpUrl").value.trim().replace(/\/+$/,"");
+  if (!SENHA) return toast("Digite a senha do painel!");
+  if (!url) url = await descobrirUrl();
+  if (!url) return toast("Sem endereço do servidor! Coloque acima.");
+  BASE = url;
+  localStorage.setItem("sombra_senha", SENHA);
+  localStorage.setItem("sombra_url", BASE);
+  try {
+    var e = await api("/api/estado");
+    if (e.ok) { mostrarPainel(e); toast("Bem-vindo! ✓", true); }
+    else toast("Servidor respondeu: " + (e.erro || "?"));
+  } catch(err) { toast("Não consegui falar com o servidor em:<br>" + BASE); }
+}
+
+function mostrarPainel(e) {
+  document.getElementById("telaLogin").style.display = "none";
+  document.getElementById("telaPainel").style.display = "block";
+  document.getElementById("btnSair").style.display = "inline-block";
+  document.getElementById("cAtivas").textContent = e.resumo.ativas;
+  document.getElementById("cExpiradas").textContent = e.resumo.expiradas;
+  document.getElementById("cBanidas").textContent = e.resumo.banidas;
+  document.getElementById("cAparelhos").textContent = e.resumo.aparelhos;
+  document.getElementById("cUptime").textContent = e.uptime || "online";
+  DADOS = e.chaves || [];
+  montarTabela();
+  var lg = e.log || [];
+  document.getElementById("logBox").innerHTML = lg.length ? lg.map(function(l){
+    return '<div class="ok-linha"><span>' + l.criada_em + '</span><span style="color:#e63946">' + l.evento + '</span><span>' + (l.detalhe||"") + '</span></div>';
+  }).join("") : "sem log";
+}
+
+function diasRestantes(exp) {
+  var d = new Date(exp.replace(" ","T")) - new Date();
+  return Math.ceil(d / 86400000);
+}
+
+function montarTabela() {
+  var q = (document.getElementById("inpValidar").value || "").toUpperCase();
+  var linhas = DADOS.filter(function(c){ return !q || c.chave.indexOf(q) >= 0; });
+  var tb = document.getElementById("tbChaves");
+  if (!linhas.length) { tb.innerHTML = '<tr><td colspan="6" style="color:#6d6d78">Nenhuma key</td></tr>'; return; }
+  tb.innerHTML = linhas.map(function(c) {
+    var st = c.status, badge = st === "ativa" ? "b-at" : (st === "expirada" ? "b-ex" : "b-ba");
+    var dr = diasRestantes(c.expira_em);
+    var max = (c.max_aparelhos === 0 || c.max_aparelhos === "0") ? "∞" : c.max_aparelhos;
+    var usados = (c.usados === undefined ? "?" : c.usados);
+    return '<tr>' +
+      '<td><span class="key" onclick="copiar(this)" data-k="' + c.chave + '">' + c.chave + '</span></td>' +
+      '<td>' + (c.cliente || "—") + '<div style="color:#6d6d78;font-size:11px">' + (c.nota || "") + '</div></td>' +
+      '<td>' + c.expira_em + '<div style="font-size:11px;color:' + (dr > 3 ? "#3ddc84" : "#ffc043") + '">' + (st === "banida" ? "—" : (dr > 0 ? dr + " dias" : "expirou")) + '</div></td>' +
+      '<td>' + usados + " / " + max + '</td>' +
+      '<td><span class="badge ' + badge + '">' + st.toUpperCase() + '</span></td>' +
+      '<td><div class="acoes">' +
+        '<button class="btn mini azul" style="background:#1b3a5c" onclick="verAparelhos(' + c.id + ')">📱</button>' +
+        '<button class="btn mini ambar" onclick="estender(' + c.id + ')">+dias</button>' +
+        '<button class="btn mini cinza" onclick="mudarLimite(' + c.id + ')">limite</button>' +
+        (st === "banida"
+          ? '<button class="btn mini verde" onclick="fazer(' + c.id + ',\'liberar\')">▶</button>'
+          : '<button class="btn mini" style="background:#5c1b22" onclick="fazer(' + c.id + ',\'ban\')">🚫</button>') +
+        '<button class="btn mini cinza" onclick="fazer(' + c.id + ',\'reset\')">♻ reset</button>' +
+        '<button class="btn mini" style="background:#3a1218" onclick="fazer(' + c.id + ',\'deletar\')">🗑</button>' +
+      '</div></td></tr>';
+  }).join("");
+}
+
+function copiar(el) {
+  var k = el.getAttribute("data-k");
+  if (navigator.clipboard) navigator.clipboard.writeText(k);
+  toast("Key copiada: " + k, true);
+}
+
+function validarBusca() {
+  var q = (document.getElementById("inpValidar").value || "").toUpperCase().trim();
+  if (!q) { montarTabela(); return; }
+  var c = DADOS.filter(function(x){ return x.chave === q; })[0];
+  montarTabela();
+  if (!c) return toast("❌ KEY NÃO ENCONTRADA no servidor");
+  if (c.status === "ativa") return toast("✅ KEY VÁLIDA! Expira: " + c.expira_em, true);
+  if (c.status === "expirada") return toast("⚠️ KEY EXPIRADA (" + c.expira_em + ")");
+  toast("🚫 KEY BANIDA");
+}
+
+function abrirCriar() { document.getElementById("modCriar").style.display = "flex"; }
+
+async function criarKey() {
+  var corpo = {
+    cliente: document.getElementById("nCliente").value.trim(),
+    nota: document.getElementById("nNota").value.trim(),
+    dias: parseInt(document.getElementById("nDias").value || "30"),
+    max_aparelhos: parseInt(document.getElementById("nMax").value || "1")
+  };
+  var r = await api("/api/chaves", "POST", corpo);
+  if (r.ok) { toast("✅ Criada: " + r.chave + "<br>Expira: " + r.expira, true); fechar("modCriar"); recarregar(); }
+  else toast("Erro: " + (r.erro || "?"));
+}
+
+async function fazer(cid, acao) {
+  if (acao === "deletar" && !confirm("Apagar a key DEFINITIVAMENTE?")) return;
+  if (acao === "ban" && !confirm("Banir esta key?")) return;
+  if (acao === "reset" && !confirm("Apagar TODOS os aparelhos desta key?")) return;
+  var r = await api("/api/chaves/" + cid + "/" + acao, "POST");
+  if (r.ok) { toast("Feito ✓", true); recarregar(); } else toast("Erro: " + (r.erro || "?"));
+}
+
+async function estender(cid) {
+  var d = prompt("Adicionar quantos dias?", "7");
+  if (!d) return;
+  var r = await api("/api/chaves/" + cid + "/estender", "POST", { dias: parseInt(d) });
+  if (r.ok) { toast("✓ Agora expira: " + r.expira, true); recarregar(); } else toast("Erro: " + (r.erro || "?"));
+}
+
+async function mudarLimite(cid) {
+  var m = prompt("Máximo de aparelhos (0 = ilimitado):", "1");
+  if (m === null) return;
+  var r = await api("/api/chaves/" + cid + "/limite", "POST", { max_aparelhos: m });
+  if (r.ok) { toast("✓ Limite: " + (r.max_aparelhos === 0 ? "ilimitado" : r.max_aparelhos), true); recarregar(); } else toast("Erro: " + (r.erro || "?"));
+}
+
+async function verAparelhos(cid) {
+  document.getElementById("modApr").style.display = "flex";
+  document.getElementById("listaApr").innerHTML = "Carregando...";
+  var r = await api("/api/chaves/" + cid + "/aparelhos");
+  var box = document.getElementById("listaApr");
+  if (!r.ok || !r.aparelhos.length) { box.innerHTML = "Nenhum aparelho ainda."; return; }
+  box.innerHTML = r.aparelhos.map(function(a) {
+    return '<div class="ok-linha">' +
+      '<span style="font-family:monospace;color:#5ab0ff">' + a.codigo + '</span>' +
+      '<span>ativou: ' + (a.ativado_em || "?") + '</span>' +
+      '<span>visto: ' + (a.ultimo_ok || "—") + '</span>' +
+      '<button class="btn mini" style="background:#3a1218" onclick="delApr(' + a.id + ')">🗑</button>' +
+    '</div>';
+  }).join("");
+}
+
+async function delApr(did) {
+  if (!confirm("Remover este aparelho? Ele vai conseguir ativar de novo se tiver vaga.")) return;
+  var r = await api("/api/aparelhos/" + did + "/deletar", "POST");
+  if (r.ok) { toast("Aparelho removido ✓", true); fechar("modApr"); recarregar(); } else toast("Erro: " + (r.erro || "?"));
+}
+
+async function recarregar() {
+  try {
+    var e = await api("/api/estado");
+    if (e.ok) mostrarPainel(e);
+  } catch(err) {}
+}
+
+(function init() {
+  document.getElementById("inpValidar").addEventListener("input", montarTabela);
+  var s = localStorage.getItem("sombra_senha");
+  var u = localStorage.getItem("sombra_url");
+  descobrirUrl().then(function(d) {
+    document.getElementById("inpUrl").value = d || u || "";
+    if (s && (d || u)) {
+      SENHA = s; BASE = (d || u).replace(/\/+$/,"");
+      api("/api/estado").then(function(e){ if (e.ok) { mostrarPainel(e); } }).catch(function(){});
+    }
+  });
+  setInterval(function(){ if (BASE && SENHA) recarregar(); }, 30000);
+})();
+</script>
+</body>
+</html>
