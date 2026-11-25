@@ -838,6 +838,8 @@ def api_validar():
         res = validar_chave(j.get("chave", ""), j.get("codigo", ""), origem="api")
     except sqlite3.OperationalError:
         res = {"ok": False, "erro": "Servidor ocupado! Tente de novo."}
+    if not res.get("ok"):
+        log_evento("validar_negado", (str(j.get("chave", ""))[:24] + " " + str(j.get("codigo", ""))[:12] + " " + str(res.get("erro", ""))[:40]))
     return jsonify(res), (200 if res["ok"] else 403)
 
 
