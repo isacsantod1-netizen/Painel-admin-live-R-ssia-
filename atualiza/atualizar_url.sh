@@ -16,7 +16,8 @@ if [ ! -f ~/.gh_token ]; then
 fi
 
 URL=$(tr -d '[:space:]' < SERVIDOR_URL.txt 2>/dev/null)
-if [ -z "$URL" ] || [ "$URL" = "https://api.trycloudflare.com" ] || [[ "$URL" == *"/api.trycloudflare.com"* ]]; then
+if echo "$URL" | grep -q "api\.trycloudflare" ; then URL="" ; fi
+if [ -z "$URL" ]; then
   echo "[!] Tunel ainda nao subiu de verdade (sem endereco proprio)."
   echo "[!] Rode: sh termux/boot.sh   e veja se aparece https://NOME.trycloudflare.com"
   exit 1
