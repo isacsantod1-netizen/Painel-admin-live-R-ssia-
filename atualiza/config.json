@@ -1,0 +1,10 @@
+{
+  "bot_token": "9009073777:AAEF2CYJSdULyCRT6lvUZ4aOiLkWdn21Y-E",
+  "admins": ["8732377679"],
+  "canal": "",
+  "senha_painel": "isacvidaloka19972929",
+  "porta": 8080,
+  "validade_grant_dias": 7,
+  "versao_min": 0,
+  "banir_auto": true
+}
