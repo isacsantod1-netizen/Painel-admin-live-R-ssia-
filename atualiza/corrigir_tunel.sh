@@ -22,8 +22,11 @@ chmod +x cloudflared.bin
 echo "[4/6] DNS de trabalho + invoclucro..."
 echo "nameserver 8.8.8.8" > /data/data/com.termux/files/usr/etc/resolv.conf
 echo "nameserver 1.1.1.1" >> /data/data/com.termux/files/usr/etc/resolv.conf
+echo "      certificados:"; ls /data/data/com.termux/files/usr/etc/tls/certs/ca-certificates.crt 2>/dev/null || pkg install -y ca-certificates >/dev/null 2>&1
 cat > cloudflared <<'WRAP'
 #!/data/data/com.termux/files/usr/bin/sh
+export SSL_CERT_FILE=/data/data/com.termux/files/usr/etc/tls/certs/ca-certificates.crt
+export SSL_CERT_DIR=/data/data/com.termux/files/usr/etc/tls/certs
 exec proot -b /data/data/com.termux/files/usr/etc/resolv.conf:/etc/resolv.conf -b /data/data/com.termux/files/usr/etc/tls:/etc/ssl /data/data/com.termux/files/home/sombra_server/termux/cloudflared.bin "$@"
 WRAP
 chmod +x cloudflared
