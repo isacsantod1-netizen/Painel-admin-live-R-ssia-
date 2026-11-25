@@ -44,5 +44,10 @@ echo "[+] Painel neste celular:  http://localhost:8080"
 echo "[+] Log do bot:            tail -f servidor.log"
 echo "[+] Pra deixar rodando:    feche o Termux que continua (wake-lock ativo)"
 
-# 4) publica o endereco atual no GitHub (o APK e o painel leem de la)
+# 4) vigia: se algo cair, sobe sozinho (e avisa o GitHub)
+if ! pgrep -f "vigia.sh" >/dev/null 2>&1; then
+    nohup sh "$DIR/vigia.sh" >> "$DIR/vigia.log" 2>&1 &
+fi
+
+# 5) publica o endereco atual no GitHub (o APK e o painel leem de la)
 sh "$DIR/atualizar_url.sh" >/dev/null 2>&1 || true
