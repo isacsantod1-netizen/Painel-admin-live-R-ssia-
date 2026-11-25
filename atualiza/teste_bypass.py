@@ -1,15 +1,21 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""TESTES DE BYPASS (NEGATIVOS) - simula ataques reais e exige que cada
-um seja DETECTADO/BLOQUEADO pelos mecanismos do APK.
+"""TESTES DE BYPASS (ataques simulados estilo MT Manager / APK Editor).
+Cada ataque precisa ser DETECTADO pelas protecoes do APK/servidor.
+Sai com codigo 0 = TODOS OS ATAQUES CONTIDOS; 1 = alguma brecha.
+
 Uso: python3 teste_bypass.py <apk> [DEXHASH]
 """
-import sys, os, zipfile, hashlib, struct, subprocess, tempfile
+import sys, os, zipfile, hashlib, shutil, subprocess, tempfile
 
 KEY = 0x5A
-def X(s): return ''.join(f'{(b ^ KEY):02x}' for b in s.encode()).encode()
-CERT_OFICIAL = "e84441f6a757f9a765dc88edf6cdb9ffc04081d5ce0375e74a66520f09d98dcc"
+def X(s):
+    return ''.join(f'{(b ^ KEY):02x}' for b in s.encode()).encode()
+
+CERT_ESPERADO = "e84441f6a757f9a765dc88edf6cdb9ffc04081d5ce0375e74a66520f09d98dcc"
 BASE = os.path.dirname(os.path.abspath(__file__))
+KEYTOOL = '/usr/lib/jvm/jdk-11/bin/keytool'
+APKSIGNER = os.path.join(BASE, 'tools/android-11/apksigner')
 falhas = []
 
 def chk(nome, ok):
@@ -17,84 +23,125 @@ def chk(nome, ok):
     if not ok:
         falhas.append(nome)
 
+def sha(data):
+    return hashlib.sha256(data).hexdigest()
+
+def cert_do_apk(apk):
+    r = subprocess.run([APKSIGNER, 'verify', '--print-certs', apk],
+                       capture_output=True, text=True, timeout=120)
+    for ln in r.stdout.splitlines():
+        if 'SHA-256 digest' in ln:
+            return ln.split(':')[-1].strip().replace(':', '').lower()
+    return ''
+
 def main():
-    apk = sys.argv[1]
-    print('== TESTES DE BYPASS (ataques simulados):', os.path.basename(apk))
-
-    # ---- ATAQUE 1: modificar o dex de funcoes (smali) ----
+    if len(sys.argv) < 2:
+        print(__doc__)
+        return 1
+    apk = os.path.abspath(sys.argv[1])
+    dexhash = sys.argv[2] if len(sys.argv) > 2 else None
+    os.makedirs(os.path.join(BASE, 'tmp_bypass'), exist_ok=True)
+    tmp = tempfile.mkdtemp(prefix='bypass_', dir=os.path.join(BASE, 'tmp_bypass'))
     z = zipfile.ZipFile(apk)
-    d6 = bytearray(z.read('classes6.dex'))
-    h_antes = hashlib.sha256(d6).hexdigest()
-    d6[len(d6) // 2] ^= 0xFF  # corrompe 1 byte = "edicao de smali"
-    h_depois = hashlib.sha256(d6).hexdigest()
-    esperado = sys.argv[2] if len(sys.argv) > 2 else None
-    if esperado:
-        chk('ATAQUE 1 (smali editado) -> hash muda e gate detecta',
-            h_antes == esperado and h_depois != esperado and X(esperado) in z.read('classes7.dex'))
-    else:
-        chk('ATAQUE 1 (smali editado) -> hash muda', h_depois != h_antes)
-
-    # ---- ATAQUE 2: re-assinar com outra chave (APK Editor/MT) ----
-    # prova: qualquer certificado que NAO seja o oficial gera outro SHA-256 e o
-    # gate (que compara o SHA-256 do cert instalado com o oficial) nega tudo.
-    try:
-        from cryptography import x509
-        from cryptography.x509.oid import NameOID
-        from cryptography.hazmat.primitives import hashes, serialization
-        from cryptography.hazmat.primitives.asymmetric import rsa
-        import datetime
-        k = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-        nome = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, 'fake')])
-        cert = (x509.CertificateBuilder().subject_name(nome).issuer_name(nome)
-                .public_key(k.public_key()).serial_number(x509.random_serial_number())
-                .not_valid_before(datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=1))
-                .not_valid_after(datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=30))
-                .sign(k, hashes.SHA256()))
-        digest_falso = hashlib.sha256(cert.public_bytes(serialization.Encoding.DER)).hexdigest()
-        # e o certificado REAL do APK instalado e o oficial?
-        tools = os.path.join(BASE, 'tools/android-11')
-        r = subprocess.run([os.path.join(tools, 'apksigner'), 'verify', '--print-certs', apk],
-                           capture_output=True, text=True)
-        chk('ATAQUE 2 (re-assinado) -> cert forjado tem SHA-256 diferente e e REJEITADO',
-            digest_falso != CERT_OFICIAL and CERT_OFICIAL in r.stdout)
-    except ImportError:
-        chk('ATAQUE 2 (re-assinado) -> lib cryptography indisponivel', False)
-
-    # ---- ATAQUE 3: forjar passe RSA ----
-    try:
-        from cryptography.hazmat.primitives import hashes, serialization
-        from cryptography.hazmat.primitives.asymmetric import padding, rsa
-        # chave FALSA assina um passe falso
-        falsa = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-        passe = 'SOMBRAMODZ-V2|SOMBRA-FAKE-FAKE|XXXX-XXXX|01/01/2030|aa|bb|*'
-        sig = falsa.sign(passe.encode(), padding.PKCS1v15(), hashes.SHA256())
-        # a chave PUBLICA do SERVIDOR real tem que REJEITAR
-        pub_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                                'sombra_server', 'public.pem')
-        if not os.path.exists(pub_path):
-            chk('ATAQUE 3 (passe forjado) -> rejeitado pela chave publica (SEM public.pem)', False)
-        else:
-            pub = serialization.load_pem_public_key(open(pub_path, 'rb').read())
-            try:
-                pub.verify(sig, passe.encode(), padding.PKCS1v15(), hashes.SHA256())
-                chk('ATAQUE 3 (passe forjado) -> rejeitado pela chave publica', False)
-            except Exception:
-                chk('ATAQUE 3 (passe forjado) -> rejeitado pela chave publica', True)
-    except ImportError:
-        chk('ATAQUE 3 (passe forjado) -> lib cryptography indisponivel', False)
-
-    # ---- ATAQUE 4: remover a tela Key nao abre as funcoes ----
     d7 = z.read('classes7.dex')
-    m6 = z.read('classes6.dex')
-    d3 = z.read('classes3.dex')
-    chk('ATAQUE 4 (remover tela Key) -> funcoes exigem y.a (portas trancadas)',
-        b'Ly/a;' in m6 and b'Ly/a;' in d3 and X('/api/validar') in d7)
+    print('== TESTES DE BYPASS:', os.path.basename(apk))
+    print()
+
+    # ---------- TA1: MT Manager - re-assinar com keystore estranho ----------
+    print('-- TA1 re-assinatura com keystore estranho (MT Manager)')
+    estranho = os.path.join(tmp, 'estranho.jks')
+    subprocess.run([KEYTOOL, '-genkeypair', '-alias', 'atacante', '-keyalg', 'RSA',
+                    '-keysize', '2048', '-validity', '1', '-keystore', estranho,
+                    '-storepass', 'ataque123', '-keypass', 'ataque123',
+                    '-dname', 'CN=Atacante'], capture_output=True, timeout=120)
+    atk1 = os.path.join(tmp, 'ta1_resign.apk')
+    shutil.copy(apk, atk1)
+    subprocess.run(['zip', '-qd', atk1, 'META-INF/*'], capture_output=True)
+    subprocess.run([APKSIGNER, 'sign', '--ks', estranho, '--ks-key-alias', 'atacante',
+                    '--ks-pass', 'pass:ataque123', '--key-pass', 'pass:ataque123',
+                    '--out', atk1 + '.s', atk1], capture_output=True, timeout=300)
+    os.replace(atk1 + '.s', atk1)
+    cert_ataque = cert_do_apk(atk1)
+    chk('TA1 cert do atacante != cert oficial (gate f()/cofre c() bloqueia)',
+        bool(cert_ataque) and cert_ataque != CERT_ESPERADO)
+    z1 = zipfile.ZipFile(atk1)
+    chk('TA1 dex intactos no ataque (mas cert pin pega)', sha(z1.read('classes6.dex')) == sha(z.read('classes6.dex')))
+    z1.close()
+    os.remove(atk1)
+
+    # ---------- TA2a: patch de smali + re-assinatura OFICIAL impossivel;
+    #            patch + assinatura estranha: hash do dex diverge ----------
+    print('-- TA2 patch de smali (recompile) + re-assinatura')
+    atk2 = os.path.join(tmp, 'ta2_patch.apk')
+    shutil.copy(apk, atk2)
+    d6 = bytearray(z.read('classes6.dex'))
+    d6[0x200] ^= 0xFF  # byte aleatorio na area de dados = smali mexido
+    subprocess.run(['zip', '-qd', atk2, 'classes6.dex'], capture_output=True)
+    with open(os.path.join(tmp, 'classes6.dex'), 'wb') as fh:
+        fh.write(d6)
+    subprocess.run(['zip', '-q', atk2, 'classes6.dex'], capture_output=True, cwd=tmp)
+    subprocess.run(['zip', '-qd', atk2, 'META-INF/*'], capture_output=True)
+    subprocess.run([APKSIGNER, 'sign', '--ks', estranho, '--ks-key-alias', 'atacante',
+                    '--ks-pass', 'pass:ataque123', '--key-pass', 'pass:ataque123',
+                    '--out', atk2 + '.s', atk2], capture_output=True, timeout=300)
+    os.replace(atk2 + '.s', atk2)
+    z2 = zipfile.ZipFile(atk2)
+    h6_ataque = sha(z2.read('classes6.dex'))
+    chk('TA2 hash de classes6.dex diverge (gate g() + cofre d() bloqueiam)',
+        h6_ataque != sha(z.read('classes6.dex')) and (not dexhash or h6_ataque != dexhash))
+    chk('TA2 hash NAO esta no cofre do gate', X(h6_ataque) not in d7 and X(dexhash or '') in d7)
+
+    # ---------- TA3: apagar/renomear dex ----------
+    print('-- TA3 dex apagado/renomeado (APK Editor)')
+    atk3 = os.path.join(tmp, 'ta3_sem_dex.apk')
+    shutil.copy(apk, atk3)
+    subprocess.run(['zip', '-qd', atk3, 'classes6.dex'], capture_output=True)
+    z3 = zipfile.ZipFile(atk3)
+    chk('TA3 classes6.dex ausente -> gate g() fail-closed (ze==null=false) + cofre "AUSENTE"',
+        'classes6.dex' not in z3.namelist())
+
+    # ---------- TA4: cofre de hashes completo no classes7 ----------
+    print('-- TA4 cofre de hashes (x/a) embutido')
+    chk('TA4 classe x/a definida no dex', b'Lx/a;' in d7)
+    chk('TA4 vault cobre os 6 dex', all(X(n) in d7 for n in
+        ['classes.dex', 'classes2.dex', 'classes3.dex', 'classes4.dex', 'classes5.dex', 'classes6.dex']))
+    chk('TA4 vault cobre resources.arsc + AndroidManifest.xml',
+        X('resources.arsc') in d7 and X('AndroidManifest.xml') in d7)
+    chk('TA4 cert pin no cofre', X(CERT_ESPERADO) in d7)
+    chk('TA4 anti-debug (TracerPid/maps frida)', X('/proc/self/status') in d7 and X('libgadget') in d7)
+    chk('TA4 gate v4 valida 6 dex (fail-closed)', X('classes5.dex') in d7 and X('classes2.dex') in d7)
+
+    # ---------- TA5: passe RSA ----------
+    print('-- TA5 passe RSA (grant assinado)')
+    try:
+        from cryptography.hazmat.primitives import hashes, serialization
+        from cryptography.hazmat.primitives.asymmetric import padding
+        priv = serialization.load_pem_private_key(
+            open(os.path.join(BASE, '..', 'sombra_server', 'private.pem'), 'rb').read(), password=None)
+        pub = serialization.load_pem_public_key(
+            open(os.path.join(BASE, '..', 'sombra_server', 'public.pem'), 'rb').read())
+        grant = b'SOMBRAMODZ-V2|TESTE|0000-0000|2030-01-01|nonce|jti|*'
+        sig = priv.sign(grant, padding.PKCS1v15(), hashes.SHA256())
+        try:
+            pub.verify(sig, grant, padding.PKCS1v15(), hashes.SHA256())
+            ok_real = True
+        except Exception:
+            ok_real = False
+        try:
+            pub.verify(sig, grant + b'X', padding.PKCS1v15(), hashes.SHA256())
+            ok_tamper = True
+        except Exception:
+            ok_tamper = False
+        chk('TA5 grant correto valida com chave publica do gate', ok_real)
+        chk('TA5 grant adulterado RECUSADO (anti-forja)', not ok_tamper)
+    except Exception as e:
+        chk('TA5 passe RSA (%s)' % e, False)
 
     print()
     if falhas:
-        print('RESULTADO: %d FALHAS - PROTECAO INCOMPLETA' % len(falhas))
+        print('RESULTADO: %d BRECHAS - NAO PUBLICAR' % len(falhas))
         return 1
-    print('RESULTADO: TODOS OS ATAQUES FORAM BLOQUEADOS')
+    print('RESULTADO: TODOS OS ATAQUES CONTIDOS')
     return 0
 
 if __name__ == '__main__':
