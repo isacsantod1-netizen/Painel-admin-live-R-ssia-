@@ -113,13 +113,24 @@ def db_init():
     con.close()
 
 
+def _mascarar(txt):
+    """Nunca expor keys completas nos logs."""
+    out = []
+    for tok in str(txt).split():
+        up = tok.upper()
+        if up.startswith("SOMBRA-") and len(tok) >= 12:
+            tok = tok[:11] + "****"
+        out.append(tok)
+    return " ".join(out)
+
+
 def log_evento(evento, detalhe="", con=None):
     fechar = con is None
     if fechar:
         con = db()
     con.execute(
         "INSERT INTO log(criada_em,evento,detalhe) VALUES (?,?,?)",
-        (agora(), evento, detalhe),
+        (agora(), evento, _mascarar(detalhe)),
     )
     if fechar:
         con.commit()
@@ -172,11 +183,20 @@ def config_load():
             "senha_painel": "troque-essa-senha",
             "porta": 8080,
             "validade_grant_dias": 7,
+            "manutencao": False,
+            "max_ativacoes_dia": 3,
         }
         config_save(cfg)
         return cfg
     with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-        return json.load(f)
+        cfg = json.load(f)
+    # protecao contra falhas de configuracao: completa chaves faltantes
+    for _k, _v in {"bot_token": "", "admins": [], "canal": "",
+                   "senha_painel": "troque-essa-senha", "porta": 8080,
+                   "validade_grant_dias": 7, "manutencao": False,
+                   "max_ativacoes_dia": 3, "versao_min": 0, "banir_auto": True}.items():
+        cfg.setdefault(_k, _v)
+    return cfg
 
 
 def config_save(cfg):
@@ -319,6 +339,28 @@ def validar_chave(chave, codigo, origem="api", jti_req=None, revalida=False):
             con.close()
             log_evento("validar_falhou", f"{chave} limite de aparelhos ({codigo})")
             return {"ok": False, "erro": "Limite de aparelhos! Apague um no painel."}
+        # deteccao de multiplas sessoes/ativacoes suspeitas (24h)
+        try:
+            max_dia = int(CFG.get("max_ativacoes_dia", 3))
+            if max_dia > 0:
+                linhas = con.execute(
+                    "SELECT criada_em FROM log WHERE evento='ativar' AND detalhe LIKE ? ORDER BY id DESC LIMIT 30",
+                    (_mascarar(chave) + " %",),
+                ).fetchall()
+                janela = datetime.now() - timedelta(hours=24)
+                n_dia = 0
+                for ln in linhas:
+                    try:
+                        if parse_data(ln["criada_em"]) >= janela:
+                            n_dia += 1
+                    except (ValueError, KeyError):
+                        pass
+                if n_dia >= max_dia:
+                    con.close()
+                    log_evento("sessao_suspeita", f"{chave} {n_dia + 1} ativacoes/24h ({codigo})")
+                    return {"ok": False, "erro": "Muitos aparelhos novos! Fale com o suporte."}
+        except sqlite3.OperationalError:
+            pass
         for _tent in range(3):
             try:
                 con.execute(
@@ -726,7 +768,7 @@ def _antes():
         return ("", 204)
     if request.headers.get("X-Painel-Token", "") == CFG.get("senha_painel", ""):
         return None
-    if request.path.startswith("/api/validar") or request.path == "/login" or request.path.startswith("/static"):
+    if request.path.startswith("/api/validar") or request.path == "/login" or request.path.startswith("/static") or request.path.startswith("/api/relato"):
         return None
     if request.path.startswith("/api/") or request.path == "/":
         if not auth_ok():
@@ -896,6 +938,9 @@ def api_validar():
         vv = 0
     if vv < int(CFG.get("versao_min", 0)):
         return jsonify({"ok": False, "erro": "Atualize o APK para continuar!"}), 403
+    if CFG.get("manutencao", False):
+        log_evento("manutencao_bloqueio", str(j.get("chave", ""))[:24])
+        return jsonify({"ok": False, "erro": "Sistema em manutencao. Tente mais tarde."}), 503
     if j.get("integrity"):
         log_evento("integrity", str(j.get("integrity"))[:120])
     chave_bruta = str(j.get("chave", ""))[:24]
@@ -917,6 +962,18 @@ def api_validar():
         _falhas_soma(chave_bruta)
         log_evento("validar_negado", (chave_bruta + " " + str(j.get("codigo", ""))[:12] + " " + str(res.get("erro", ""))[:40]))
     return jsonify(res), (200 if res["ok"] else 403)
+
+
+@app.route("/api/revogar_tokens", methods=["POST"])
+def api_revogar_tokens():
+    # _antes() ja exige sessao do painel OU X-Painel-Token correto
+    con = db()
+    # rotaciona os jti (nao apaga): jti antigo passa a NAO bater = replay morre
+    con.execute("UPDATE tokens SET jti='revogado'||hex(randomblob(8))")
+    con.commit()
+    con.close()
+    log_evento("revogar_tokens", "todas as sessoes revogadas")
+    return jsonify({"ok": True})
 
 
 @app.route("/api/relato", methods=["POST"])
