@@ -1,6 +1,6 @@
 # SOMBRAMODZ - checksums SHA-256 (verificar apos cada atualizacao)
 # sha256sum -c checksums.txt
-0ae61aa928c1efcd830b3212fbbbd15ff7b21739e9ff47ee10c41490fc1f19f2  SOMBRAMODZ_P_v0.13.72_PROTEGIDO.apk
+88696bd903f8b4d197ccfbec1054a82a791c2bd749eea712984ab06bc093333a  SOMBRAMODZ_P_v0.13.72_PROTEGIDO.apk
 4ee45af17af9ef6188b4513a55bb3119e00c3244ff1b5b9410014ab9a8cd04bb  atualiza/sombra_server.py
 6d7257c8359e6b7dcac5f31bcc32a0126dab738865b2a7c73f991e42caa5f910  atualiza/boot.sh
 358160b75ac8b073fb946567dfeba17db97c240eeff105df1c4bcd555e107d0c  atualiza/vigia.sh
