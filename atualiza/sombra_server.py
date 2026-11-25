@@ -704,6 +704,9 @@ def api_estado():
     chaves = con.execute("SELECT * FROM chaves ORDER BY id DESC").fetchall()
     devs = con.execute("SELECT COUNT(*) FROM aparelhos").fetchone()[0]
     logs = con.execute("SELECT * FROM log ORDER BY id DESC LIMIT 20").fetchall()
+    usados_map = {}
+    for rr in con.execute("SELECT chave_id, COUNT(*) AS n FROM aparelhos GROUP BY chave_id").fetchall():
+        usados_map[rr["chave_id"]] = rr["n"]
     con.close()
     ativas = expiradas = banidas = 0
     lista = []
@@ -715,8 +718,7 @@ def api_estado():
             expiradas += 1
         else:
             banidas += 1
-        usados = con.execute("SELECT COUNT(*) FROM aparelhos WHERE chave_id=?", (r["id"],)).fetchone()[0]
-        lista.append(dict(r, status=st, usados=usados))
+        lista.append(dict(r, status=st, usados=usados_map.get(r["id"], 0)))
     return jsonify(
         {
             "ok": True,
