@@ -1,1 +1,1 @@
-COLOQUE_AQUI_O_ENDERECO_DO_SERVIDOR
+https://api.trycloudflare.com
